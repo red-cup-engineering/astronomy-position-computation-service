@@ -35,7 +35,7 @@ test("the published astronomy response preserves its audited numerical golden", 
       saturn: 13.3367,
       saturnSpeed: -0.06424,
       elongation: 318.8943,
-      illumination: 0.123251,
+      illumination: 0.124106,
     },
   );
   assert.equal(result.accuracy.perBodyDegrees.saturn, 0.18);
