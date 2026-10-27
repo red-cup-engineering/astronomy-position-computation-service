@@ -76,6 +76,16 @@ export function computeAstronomyPositions(value) {
     });
   }
   const elongation = normalizeDegrees(chart.bodies.moon.longitude - chart.bodies.sun.longitude);
+  // Longitude difference defines the lunar PHASE, not its illuminated fraction.
+  // The source model has lunar latitude but no range series. Approximate the
+  // geocentric Sun-Moon phase angle using mean lunar distance 384400 km (NASA)
+  // and 1 au = 149597870.7 km (IAU), not fitted parameters or precision ranges.
+  const radians = Math.PI / 180;
+  const cosSeparation = Math.cos(chart.bodies.moon.latitude * radians) * Math.cos(elongation * radians);
+  const lunarDistanceToSunDistance = 384400 / 149597870.7;
+  const phaseCosine = (lunarDistanceToSunDistance - cosSeparation) /
+    Math.sqrt(1 + lunarDistanceToSunDistance ** 2 - 2 * lunarDistanceToSunDistance * cosSeparation);
+  const illuminatedFraction = Math.max(0, Math.min(1, (1 + phaseCosine) / 2));
   return Object.freeze({
     tier: "astronomy-positions",
     time,
@@ -83,10 +93,9 @@ export function computeAstronomyPositions(value) {
     bodies: Object.freeze(bodies),
     lunarPhase: Object.freeze({
       elongation: Number(elongation.toFixed(4)),
-      illuminatedFraction: Number(((1 - Math.cos((elongation * Math.PI) / 180)) / 2).toFixed(6)),
-      // Relative longitude increases through BOTH halves of a lunation.
-      // The illuminated fraction increases only from new to full Moon.
-      // At the exact endpoints use the phase immediately following them.
+      illuminatedFraction: Number(illuminatedFraction.toFixed(6)),
+      // The *phase label* follows ecliptic elongation. Physical illumination
+      // extrema need not coincide exactly with those longitude-defined phases.
       trend: elongation < 180 ? "waxing" : "waning",
     }),
     provenance: chart.provenance,
