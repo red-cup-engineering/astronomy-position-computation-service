@@ -125,17 +125,31 @@ error provenance without promoting decimal formatting to physical accuracy.
 
 ## Provenance, accuracy and authority
 
-The lunar `trend` describes the changing illuminated fraction: waxing from
-new to full Moon (unrounded elongation `[0, 180)` degrees), waning from full to new
-Moon (`[180, 360)`). At a boundary this names the following half-cycle.
-Classification uses the full-precision source, before the returned elongation
-is rounded to four decimals. Just before full/new Moon a displayed value may
-round to 180/360 while the trend still correctly names the preceding half-cycle.
-Relative Moon–Sun angular speed is positive during both halves and cannot
-distinguish them. These conventions follow the [US Naval Observatory's phase
-definitions](https://aa.usno.navy.mil/faq/moon_phases). The returned illuminated
-fraction remains the existing longitude-only approximation; this correction
-does not introduce a new physical-accuracy claim.
+The lunar `trend` denotes the **longitude-defined phase half-cycle**, not
+the exact sign of a physical-illumination derivative at its extremum:
+waxing for Sun–Moon ecliptic longitude difference `[0, 180)` degrees and
+waning for `[180, 360)`. The exact primary phases follow these longitude
+crossings; the physical illumination extrema need not coincide with them.
+Classification uses the unrounded elongation; a printed 180/360 near the
+boundary can still carry the preceding phase label.
+
+`lunarPhase.illuminatedFraction` now uses the original Sun/Moon longitudes
+and lunar latitude to derive their geocentric spherical separation, then
+approximates the phase angle at the Moon using mean Earth–Moon distance
+**384,400 km** (NASA/JPL) and mean Sun distance **1 au =
+149,597,870.7 km** (IAU 2012). It is still an *approximate geocentric
+illumination fraction*, not a range-aware precision lunar ephemeris.
+The scalar distance ratio is a physical mean, **not** a fitted calibration.
+The rest of the published ecliptic positions and quarter-event definitions
+are unchanged. The [2026 USNO noon-UT almanac](https://aa.usno.navy.mil/calculated/moon/fraction?submit=Get+Data&task=12&tz=0&tz_label=false&tz_sign=1&year=2026)
+is an independently calculated, **two-decimal** reference, not telescope data.
+On all 365 of its dates the earlier longitude-only model differed after
+two-decimal rounding on 35 dates; the mean-distance phase-angle approximation
+differs on one. The paired RMSEs against those rounded published values are
+0.003051 and 0.002896 respectively. Such comparisons do not establish
+precision beyond that almanac's resolution; this is a model
+qualification, not an empirical discovery of new lunar dynamics.
+
 
 The embedded source algorithm is a truncated Meeus lunar/solar series with
 JPL approximate planetary elements. Its published tested interval is
