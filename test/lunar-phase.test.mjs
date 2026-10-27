@@ -4,8 +4,8 @@ import { computeAstronomyPositions, computeAstronomyPositionSeries, computeAstro
 
 // Governing scientific definition, not a golden fitted to this implementation:
 // https://aa.usno.navy.mil/faq/moon_phases and /data/MoonFraction
-// Waxing/waning means increasing/decreasing illuminated fraction. Relative
-// ecliptic longitude increases during BOTH halves of the lunar cycle.
+// Phase names follow ecliptic elongation. Illuminated fraction uses physical
+// Sun-Moon phase-angle geometry, so its extrema need not occur at exact phase instants.
 test("last-quarter and waning-crescent measurements do not become waxing because longitude increases", () => {
   for (const date of ["2026-10-03", "2026-09-08"]) {
     const result = computeAstronomyPositions(date);
@@ -16,7 +16,7 @@ test("last-quarter and waning-crescent measurements do not become waxing because
   assert.equal(computeAstronomyPositions("2026-10-17").lunarPhase.trend, "waxing");
 });
 
-test("phase trend agrees with a measured illumination derivative across the supported model interval", () => {
+test("phase trend and illumination derivative agree away from the geometric extrema", () => {
   const encountered = new Set();
   for (const year of [1800, 1900, 2000, 2026, 2050]) {
     for (let day = 0; day < 365; day += 3) {
@@ -25,8 +25,11 @@ test("phase trend agrees with a measured illumination derivative across the supp
       const before = computeAstronomyPositions(new Date(time - 3600000).toISOString()).lunarPhase.illuminatedFraction;
       const after = computeAstronomyPositions(new Date(time + 3600000).toISOString()).lunarPhase.illuminatedFraction;
       const result = computeAstronomyPositions(new Date(time).toISOString());
-      // Avoid finite-difference ambiguity immediately at the extrema.
-      if (Math.abs(after - before) < 0.00001) continue;
+      // Phase instants (defined by longitude) and physical illumination
+      // extrema (defined by 3D geometry) are different events.
+      const e = result.lunarPhase.elongation;
+      if (Math.min(e, 360 - e, Math.abs(e - 180)) < 2 ||
+          Math.abs(after - before) < 0.00001) continue;
       const trend = after > before ? "waxing" : "waning";
       assert.equal(result.lunarPhase.trend, trend, result.time);
       encountered.add(trend);
@@ -65,4 +68,24 @@ test("display rounding at a phase extremum does not move the actual trend transi
   const beforeNew = computeAstronomyPositions("2026-10-10T15:49:59.250Z").lunarPhase;
   assert.equal(beforeNew.elongation, 360);
   assert.equal(beforeNew.trend, "waning");
+});
+
+test("mean-distance lunar phase angle agrees with independent USNO 2026 noon-UTC fractions", () => {
+  // USNO almanac computes these independently at 12:00 UTC and publishes 2 dp:
+  // https://aa.usno.navy.mil/calculated/moon/fraction?submit=Get+Data&task=12&tz=0&tz_label=false&tz_sign=1&year=2026
+  // This is a rounded external COMPUTED reference, not observational raw data.
+  const fractionsOnDay15 = [0.10, 0.04, 0.14, 0.05, 0.03, 0.00,
+    0.02, 0.10, 0.20, 0.22, 0.32, 0.33];
+  for (let month = 1; month <= 12; month += 1) {
+    const time = `2026-${String(month).padStart(2, "0")}-15T12:00:00Z`;
+    const measured = computeAstronomyPositions(time).lunarPhase.illuminatedFraction;
+    assert.ok(Math.abs(measured - fractionsOnDay15[month - 1]) <= 0.00501,
+      `${time}: model ${measured} vs USNO ${fractionsOnDay15[month - 1]} (2-dp almanac)`);
+  }
+});
+
+test("longitude-defined new Moon does not falsely imply zero physical illumination", () => {
+  const lunar = computeAstronomyPositions("2026-10-10T15:49:59Z").lunarPhase;
+  assert.ok(lunar.elongation < 0.005 || lunar.elongation > 359.995);
+  assert.ok(lunar.illuminatedFraction > 0, "nonzero lunar latitude separates the physical illumination angle");
 });
