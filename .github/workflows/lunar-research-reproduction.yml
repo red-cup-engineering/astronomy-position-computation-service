@@ -1,0 +1,49 @@
+name: Independent lunar research reproduction
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'package.json'
+      - '.github/workflows/lunar-research-reproduction.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'package.json'
+      - '.github/workflows/lunar-research-reproduction.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify source and package regressions
+        run: |
+          npm run check
+          npm test
+      - name: Reproduce independent 365-day USNO reference comparison
+        run: |
+          node src/lunar-reference-assay.mjs test/fixtures/usno-2026-noon-utc-illumination.csv > lunar-reference-reproduction.json
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const r = JSON.parse(readFileSync("lunar-reference-reproduction.json", "utf8"));
+            if (r.reference_days !== 365 || r.reference.sha256 !== "b8e64f318ad14db40d5d95cf8260d78d3e52f78e4ba3e8cb5efde6991e0d2eff") throw new Error("Source or coverage changed");
+            for (const [model, expected] of Object.entries({longitude_only:35,spherical_separation:26,mean_distance_triangle:1})) {
+              if (r.models[model].two_decimal_disagreements !== expected) throw new Error(model + " changed: " + r.models[model].two_decimal_disagreements);
+            }
+            if (!(r.models.mean_distance_triangle.rmse < r.models.longitude_only.rmse)) throw new Error("Measured improvement was not reproduced");
+            console.log("Reproduced 365-day pinned reference; mismatches 35/26/1");
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lunar-reference-reproduction
+          path: lunar-reference-reproduction.json
+          retention-days: 30
