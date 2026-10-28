@@ -203,6 +203,20 @@ Source data, external catalogs and HTTP API rights must be reviewed separately
 for commercial use, derived outputs, caching and redistribution. Computing
 and selling a transformation does not override upstream licenses or terms.
 
+### Repeatable USNO 2026 research assay
+
+This repository holds **executable scoring** for the original [Lenticule Astronomy Science 365-day lunar-illumination assay](https://github.com/lenticule-science/astronomy-science-services-section/blob/main/content/text/documents/articles/notes/2026/10/27/2026-10-27-geocentric-lunar-illumination-usno-assay.md). Its single independently usable **public distribution fixture** is [`test/fixtures/usno-2026-noon-utc-illumination.csv`](test/fixtures/usno-2026-noon-utc-illumination.csv), an exact-byte copy of the Science-owned dated reference, with pinned SHA-256 `b8e64f318ad14db40d5d95cf8260d78d3e52f78e4ba3e8cb5efde6991e0d2eff`. Science retains the scientific interpretation and PROV-O provenance; the public test fixture makes the analysis executable without access to a private research repository.
+
+```sh
+# Runs five admission/scoring/negative controls and a sixth live-engine 365-day comparison.
+node --test test/lunar-reference-assay.test.mjs
+
+# Emits a structured JSON result with RMSE, MAE, bias, and disagreement dates.
+node src/lunar-reference-assay.mjs test/fixtures/usno-2026-noon-utc-illumination.csv > lunar-2026-assay.json
+```
+
+The assay refuses changed CSV source bytes by default. It admits exact 365 UTC dates and bounded two-decimal fractions; it compares longitude-only phase, latitude-aware spherical separation and physical mean-distance phase-angle models against USNO's **calculated** 2026 noon-UTC table. The full-year regression asserts the historical 35/26/1 two-decimal disagreement counts and rounded-reference RMSE. The values are **not raw physical observations, a precision ephemeris, or a novel physical theorem**. They do not certify a merchant deployment, customer acceptance or any x402 settlement. This package exposes no research-selling route or new payment service.
+
 ## Verify as an independent producer
 
 ```sh
