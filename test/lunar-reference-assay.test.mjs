@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   parseUsno2026Csv,
   scoreUsno2026,
@@ -60,4 +61,17 @@ test('2026 October longitude-defined new Moon preserves bounded physical illumin
   const predicted = calculateUsno2026Prediction('2026-10-10');
   assert.ok(predicted.mean_distance_triangle >= 0 && predicted.mean_distance_triangle <= 1);
   assert.ok(predicted.spherical_separation >= 0 && predicted.spherical_separation <= 1);
+});
+
+test('reproduces original full-year three-model evidence against the real astronomy engine', () => {
+  const csv = readFileSync(new URL('./fixtures/usno-2026-noon-utc-illumination.csv', import.meta.url), 'utf8');
+  const result = runUsno2026Assay(csv);
+  assert.equal(result.reference_days, 365);
+  assert.equal(result.reference.sha256, 'b8e64f318ad14db40d5d95cf8260d78d3e52f78e4ba3e8cb5efde6991e0d2eff');
+  assert.equal(result.models.longitude_only.two_decimal_disagreements, 35);
+  assert.equal(result.models.spherical_separation.two_decimal_disagreements, 26);
+  assert.equal(result.models.mean_distance_triangle.two_decimal_disagreements, 1);
+  assert.ok(Math.abs(result.models.longitude_only.rmse - 0.0030510) < 0.000002);
+  assert.ok(Math.abs(result.models.mean_distance_triangle.rmse - 0.0028957) < 0.000002);
+  assert.ok(result.models.mean_distance_triangle.rmse < result.models.longitude_only.rmse);
 });
