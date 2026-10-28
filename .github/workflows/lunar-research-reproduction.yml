@@ -42,6 +42,32 @@ jobs:
             if (!(r.models.mean_distance_triangle.rmse < r.models.longitude_only.rmse)) throw new Error("Measured improvement was not reproduced");
             console.log("Reproduced 365-day pinned reference; mismatches 35/26/1");
           '
+      - name: Test algebraic rounding bounds and qualify 365-day ranking
+        run: |
+          node --check src/lunar-rounding-sensitivity.mjs
+          node --test test/lunar-rounding-sensitivity.test.mjs
+          node src/lunar-rounding-sensitivity.mjs test/fixtures/usno-2026-noon-utc-illumination.csv > lunar-rounding-sensitivity.json
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const r = JSON.parse(readFileSync("lunar-rounding-sensitivity.json", "utf8"));
+            const expected = "b8e64f318ad14db40d5d95cf8260d78d3e52f78e4ba3e8cb5efde6991e0d2eff";
+            if (r.reference.sha256 !== expected) throw new Error("Source mismatch");
+            for (const [name, c] of Object.entries(r.comparisons)) {
+              if (c.n !== 365 || c.witnesses.length !== 365 ||
+                  c.lower > c.printedMseDifference || c.upper < c.printedMseDifference) {
+                throw new Error("Rounding bounds invalid for " + name);
+              }
+              console.log(name, JSON.stringify({
+                status:c.status, lower:c.lower, upper:c.upper,
+                printedMseDifference:c.printedMseDifference
+              }));
+            }
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lunar-rounding-sensitivity
+          path: lunar-rounding-sensitivity.json
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: lunar-reference-reproduction
