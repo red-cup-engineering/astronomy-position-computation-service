@@ -107,13 +107,116 @@ export function runUsno2026Assay(csvText, options = {}) {
   };
 }
 
+/**
+ * Admit a separately captured, *web-rendered* USNO day-by-month source table.
+ * This checks the clock/edition and every civil-day/month cell rather than
+ * trusting the row order or the Group's own already-normalized CSV. It is
+ * deliberately NOT an HTML parser: no claim is made to have archived USNO's
+ * original HTTP response, observed a physical Moon, or recovered more than
+ * the published two-decimal fractions.
+ */
+export function parseUsno2026RenderedTable(renderedText) {
+  if (typeof renderedText !== 'string' || renderedText.length > 25000) {
+    throw new TypeError('rendered USNO source must be a bounded text capture');
+  }
+  if (!/Fraction of (?:the )?Moon Illuminated, 2026/u.test(renderedText) ||
+      !/at Noon\s+Universal Time/u.test(renderedText)) {
+    throw new Error('source edition or noon Universal Time header mismatch');
+  }
+  const lines = renderedText.replace(/\r\n/gu, '\n').split('\n');
+  const expectedMonths = ['Day', 'Jan.', 'Feb.', 'Mar.', 'Apr.', 'May',
+    'June', 'July', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
+  const headerIndex = lines.findIndex(line => /^\s*Day\s*\|/u.test(line));
+  if (headerIndex < 0 || JSON.stringify(lines[headerIndex].split('|').map(x => x.trim())) !==
+    JSON.stringify(expectedMonths)) {
+    throw new Error('source day-by-month header must name all 12 original months in order');
+  }
+  const sourceDayRows = lines.slice(headerIndex + 1)
+    .filter(line => /^\s*[0-9]{2}\s*\|/u.test(line));
+  if (sourceDayRows.length !== 31) {
+    throw new Error(`USNO printed source needs exactly 31 day rows, got ${sourceDayRows.length}`);
+  }
+  const sourceByDay = sourceDayRows.map((line, index) => {
+    const fields = line.split('|').map(x => x.trim());
+    const day = String(index + 1).padStart(2, '0');
+    if (fields.length !== 13 || fields[0] !== day) {
+      throw new Error(`USNO source date/order/column count invalid for day ${day}`);
+    }
+    return fields.slice(1);
+  });
+  const rows = [];
+  let absentCalendarCells = 0;
+  for (let month = 0; month < 12; month += 1) {
+    const lastDay = new Date(Date.UTC(2026, month + 1, 0)).getUTCDate();
+    for (let day = 1; day <= 31; day += 1) {
+      const printed = sourceByDay[day - 1][month];
+      if (day > lastDay) {
+        if (printed !== '--') throw new Error(`invalid calendar cell must be --: month ${month + 1}, day ${day}`);
+        absentCalendarCells += 1;
+        continue;
+      }
+      const utc_date = `2026-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (!/^(?:0\.[0-9]{2}|1\.00)$/u.test(printed)) {
+        throw new Error(`invalid source fraction on ${utc_date}: ${printed}`);
+      }
+      rows.push({ utc_date, printed_fraction: printed });
+    }
+  }
+  if (rows.length !== 365 || absentCalendarCells !== 7) {
+    throw new Error('USNO source table has incorrect calendar coverage');
+  }
+  return { rows, absentCalendarCells };
+}
+
+/**
+ * Compare an independently obtained 31x12 rendered official source table with
+ * the original source-locked date CSV. Changed prints are *candidates* for a
+ * source correction, not a historical retraction or measured physical error.
+ * `sourceCaptureSha256` addresses THIS text copy, not upstream HTML bytes.
+ */
+export function reconcileUsno2026RenderedSource(csvText, renderedText) {
+  const source = parseUsno2026RenderedTable(renderedText);
+  const original = parseUsno2026Csv(csvText);
+  const mismatches = source.rows.flatMap((row, index) => {
+    const actual = original[index];
+    if (actual.utc_date === row.utc_date &&
+        actual.illuminated_fraction.toFixed(2) === row.printed_fraction) return [];
+    return [{ utc_date: row.utc_date, published: row.printed_fraction,
+      sourceLockedCsv: actual.illuminated_fraction.toFixed(2) }];
+  });
+  const sourceCsvSha256 = createHash('sha256').update(csvText, 'utf8').digest('hex');
+  return {
+    type: 'Usno2026PrintedSourceReconciliation',
+    source: USNO_2026_SOURCE,
+    sourceStatus: 'separate rendered-text source capture; upstream HTML bytes not archived',
+    sourceCaptureSha256: createHash('sha256').update(renderedText, 'utf8').digest('hex'),
+    sourceCsvSha256,
+    sourceCsvPinned: sourceCsvSha256 === USNO_2026_SHA256,
+    clock: '12:00 Universal Time', year: 2026,
+    comparedDays: source.rows.length,
+    absentCalendarCells: source.absentCalendarCells,
+    mismatches,
+    status: mismatches.length === 0 && sourceCsvSha256 === USNO_2026_SHA256 ?
+      'printed-source-consistent' : 'source-reverification-candidate',
+    epistemicStanding: 'two-decimal source-text reconciliation, not an independent physical observation or unrounded accuracy',
+  };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const source = process.argv[2];
-  if (!source || process.argv.length !== 3) {
-    console.error('usage: node src/lunar-reference-assay.mjs /path/to/usno-2026-noon-utc.csv');
+  if (!source || (process.argv.length !== 3 && process.argv.length !== 4)) {
+    console.error('usage: node src/lunar-reference-assay.mjs /path/to/usno-2026-noon-utc.csv [original-rendered-source-table.txt]');
     process.exitCode = 2;
   } else {
-    try { console.log(JSON.stringify(runUsno2026Assay(readFileSync(source, 'utf8')), null, 2)); }
+    try {
+      const csv = readFileSync(source, 'utf8');
+      const result = runUsno2026Assay(csv);
+      const sourceReconciliation = process.argv[3] === undefined ? undefined :
+        reconcileUsno2026RenderedSource(csv, readFileSync(process.argv[3], 'utf8'));
+      console.log(JSON.stringify(sourceReconciliation === undefined ? result :
+        { ...result, source_reconciliation: sourceReconciliation }, null, 2));
+      if (sourceReconciliation?.status === 'source-reverification-candidate') process.exitCode = 1;
+    }
     catch (error) { console.error(`assay refused: ${error.message}`); process.exitCode = 1; }
   }
 }
