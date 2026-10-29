@@ -215,6 +215,41 @@ node --test test/lunar-reference-assay.test.mjs
 node src/lunar-reference-assay.mjs test/fixtures/usno-2026-noon-utc-illumination.csv > lunar-2026-assay.json
 ```
 
+**Independent upstream source-table reconciliation.** In addition to the
+Science-owned date-indexed reference CSV, the test fixtures retain one
+**separately read 31-day × 12-month** text copy of the
+[U.S. Naval Observatory's 2026 noon Universal Time table](https://aa.usno.navy.mil/calculated/moon/fraction?submit=Get+Data&task=12&tz=0&tz_label=false&tz_sign=1&year=2026):
+[`test/fixtures/usno-2026-noon-utc-original-rendered-table.txt`](test/fixtures/usno-2026-noon-utc-original-rendered-table.txt).
+The source was independently read as the **rendered** 2026 web table on
+2026-10-29 and is attributed to USNO under its
+[conditional usage notice](https://aa.usno.navy.mil/about/PrivacyNotice).
+It is NOT the original upstream HTTP response or a second canonical
+date-indexed dataset. The native source parser refuses a different year,
+Midnight-versus-Noon clock, swapped columns, bogus Feb 29 and other invalid
+calendar cells, duplicate/missing day rows, malformed values and non-source
+input. A changed two-decimal source print is returned as a re-verification
+candidate, not treated as a change in underlying lunar physics.
+
+```sh
+# Re-run original model comparison AND independent printed-source check.
+node src/lunar-reference-assay.mjs \
+  test/fixtures/usno-2026-noon-utc-illumination.csv \
+  test/fixtures/usno-2026-noon-utc-original-rendered-table.txt \
+  > lunar-2026-with-source-reconciliation.json
+```
+
+The optional `source_reconciliation` receipt records the two distinct
+local content digests (original locked CSV and separately acquired rendered
+text), all 365 source dates, seven structurally missing calendar entries,
+exact dates of any disagreement, and status. These are **text-capture**
+evidence; hashing the text copy is not hashing or preserving USNO's HTML.
+The existing public independent reproduction workflow exercises this
+comparison and includes its source receipt in the original
+`lunar-reference-reproduction` artifact. A future truly independent
+higher-precision astronomy reference remains a separate Science #14
+experiment; an absence of transcribing errors cannot identify unrounded
+physical model error.
+
 The assay refuses changed CSV source bytes by default. It admits exact 365 UTC dates and bounded two-decimal fractions; it compares longitude-only phase, latitude-aware spherical separation and physical mean-distance phase-angle models against USNO's **calculated** 2026 noon-UTC table. The full-year regression asserts the historical 35/26/1 two-decimal disagreement counts and rounded-reference RMSE. The values are **not raw physical observations, a precision ephemeris, or a novel physical theorem**. They do not certify a merchant deployment, customer acceptance or any x402 settlement. This package exposes no research-selling route or new payment service.
 
 ## Verify as an independent producer
