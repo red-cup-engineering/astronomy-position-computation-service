@@ -31,7 +31,7 @@ jobs:
           npm test
       - name: Reproduce independent 365-day USNO reference comparison
         run: |
-          node src/lunar-reference-assay.mjs test/fixtures/usno-2026-noon-utc-illumination.csv > lunar-reference-reproduction.json
+          node src/lunar-reference-assay.mjs test/fixtures/usno-2026-noon-utc-illumination.csv test/fixtures/usno-2026-noon-utc-original-rendered-table.txt > lunar-reference-reproduction.json
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const r = JSON.parse(readFileSync("lunar-reference-reproduction.json", "utf8"));
@@ -39,6 +39,12 @@ jobs:
             for (const [model, expected] of Object.entries({longitude_only:35,spherical_separation:26,mean_distance_triangle:1})) {
               if (r.models[model].two_decimal_disagreements !== expected) throw new Error(model + " changed: " + r.models[model].two_decimal_disagreements);
             }
+            if (!r.source_reconciliation || r.source_reconciliation.status !== "printed-source-consistent" ||
+                r.source_reconciliation.comparedDays !== 365 || r.source_reconciliation.absentCalendarCells !== 7 ||
+                r.source_reconciliation.mismatches.length !== 0 || r.source_reconciliation.sourceCsvPinned !== true) {
+              throw new Error("Independent original USNO rendered source did not reconcile");
+            }
+            console.log("USNO external source reconciliation: 365/365 exact printed values, 7 calendar holes, capture SHA-256 " + r.source_reconciliation.sourceCaptureSha256);
             if (!(r.models.mean_distance_triangle.rmse < r.models.longitude_only.rmse)) throw new Error("Measured improvement was not reproduced");
             console.log("Reproduced 365-day pinned reference; mismatches 35/26/1");
           '
