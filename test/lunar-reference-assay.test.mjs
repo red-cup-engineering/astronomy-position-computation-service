@@ -6,6 +6,8 @@ import {
   scoreUsno2026,
   runUsno2026Assay,
   calculateUsno2026Prediction,
+  parseUsno2026RenderedTable,
+  reconcileUsno2026RenderedSource,
 } from '../src/lunar-reference-assay.mjs';
 
 const fixture = (value = '0.50') => 'utc_date,illuminated_fraction\n' +
@@ -74,4 +76,65 @@ test('reproduces original full-year three-model evidence against the real astron
   assert.ok(Math.abs(result.models.longitude_only.rmse - 0.0030510) < 0.000002);
   assert.ok(Math.abs(result.models.mean_distance_triangle.rmse - 0.0028957) < 0.000002);
   assert.ok(result.models.mean_distance_triangle.rmse < result.models.longitude_only.rmse);
+});
+
+const originalUSNO = () => readFileSync(new URL(
+  './fixtures/usno-2026-noon-utc-original-rendered-table.txt', import.meta.url), 'utf8');
+const sourceLocked2026 = () => readFileSync(new URL(
+  './fixtures/usno-2026-noon-utc-illumination.csv', import.meta.url), 'utf8');
+
+test('all 365 original USNO noon-UTC printed values independently match the source-locked CSV', () => {
+  const snapshot = parseUsno2026RenderedTable(originalUSNO());
+  assert.equal(snapshot.rows.length, 365);
+  assert.equal(snapshot.absentCalendarCells, 7);
+  assert.equal(snapshot.rows[0].utc_date, '2026-01-01');
+  assert.equal(snapshot.rows.at(-1).utc_date, '2026-12-31');
+  const result = reconcileUsno2026RenderedSource(sourceLocked2026(), originalUSNO());
+  assert.equal(result.status, 'printed-source-consistent');
+  assert.equal(result.comparedDays, 365);
+  assert.equal(result.absentCalendarCells, 7);
+  assert.equal(result.mismatches.length, 0);
+  assert.equal(result.sourceCsvPinned, true);
+  assert.equal(result.sourceCsvSha256, 'b8e64f318ad14db40d5d95cf8260d78d3e52f78e4ba3e8cb5efde6991e0d2eff');
+  assert.match(result.sourceStatus, /HTML bytes not archived/);
+});
+
+test('a changed original published fraction is a source-reverification candidate, not a measured physical claim', () => {
+  const source = originalUSNO().replace('01 | 0.94 |', '01 | 0.93 |');
+  const result = reconcileUsno2026RenderedSource(sourceLocked2026(), source);
+  assert.equal(result.status, 'source-reverification-candidate');
+  assert.equal(result.mismatches.length, 1);
+  assert.deepEqual(result.mismatches[0], {
+    utc_date: '2026-01-01', published: '0.93', sourceLockedCsv: '0.94',
+  });
+  assert.equal(result.sourceCsvPinned, true);
+  assert.match(result.epistemicStanding, /not an independent physical observation/);
+});
+
+test('source text must explicitly identify the 2026 noon UTC product, all months and calendar holes', () => {
+  const source = originalUSNO();
+  for (const corrupt of [
+    source.replace('at Noon Universal Time', 'at Midnight Universal Time'),
+    source.replace('Fraction of Moon Illuminated, 2026', 'Fraction of Moon Illuminated, 2025'),
+    source.replace('Day | Jan. | Feb.', 'Day | Feb. | Jan.'),
+    source.replace('29 | 0.85 | -- |', '29 | 0.85 | 0.00 |'),
+    source.replace('31 | 0.97 | -- | 0.97 | -- |', '31 | 0.97 | -- | 0.97 | 0.00 |'),
+    source.replace('04 | 0.98 |', '04 | 1.01 |'),
+    source.replace('30 | 0.92 |', '30 | not-a-fraction |'),
+    source.replace('05 | 0.94 |', '04 | 0.94 |'),
+    source.replace('02 | 0.99 |', '02 | 0.99 | 0.01 |'),
+  ]) {
+    assert.throws(() => parseUsno2026RenderedTable(corrupt), /source|invalid|header|calendar|day|fraction/i);
+  }
+  assert.throws(() => parseUsno2026RenderedTable(42), /bounded text capture/);
+  assert.throws(() => parseUsno2026RenderedTable('A'.repeat(25001)), /bounded text capture/);
+});
+
+test('source-locked CSV drift remains visible even if the official table capture is unchanged', () => {
+  const tamperedCsv = sourceLocked2026().replace('2026-01-01,0.94', '2026-01-01,0.93');
+  const result = reconcileUsno2026RenderedSource(tamperedCsv, originalUSNO());
+  assert.equal(result.sourceCsvPinned, false);
+  assert.equal(result.status, 'source-reverification-candidate');
+  assert.equal(result.mismatches.length, 1);
+  assert.equal(result.mismatches[0].utc_date, '2026-01-01');
 });
